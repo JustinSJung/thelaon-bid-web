@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>더라온 · 입찰 검토실</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script defer src="./app.js"></script>
+  </head>
+  <body>
+    <section id="login">
+      <form id="login-form">
+        <div class="eyebrow">THE LAON · PROCUREMENT</div>
+        <h1>오늘, 어떤 입찰부터<br />검토할까요?</h1>
+        <p>공고의 참가조건부터 공급원가와 투찰 검토까지.</p>
+        <label
+          >웹 접속 암호<input
+            id="password"
+            type="password"
+            autocomplete="current-password"
+            required /></label
+        ><button class="primary" id="unlock">검토실 열기 →</button>
+        <p id="login-error" role="alert"></p>
+        <small
+          >조달청·한전·Gemini 인증키와 다른 프로그램 접속 암호입니다.</small
+        >
+      </form>
+    </section>
+    <div id="app" hidden>
+      <aside>
+        <div class="brand">THE LAON<small>입찰 검토실</small></div>
+        <nav>
+          <button data-tab="work" class="active">01 검토 순서</button
+          ><button data-tab="sources">02 수집 상태</button
+          ><button data-tab="model">03 낙찰가격 · ML</button
+          ><button data-tab="policy">04 사업 기준</button>
+        </nav>
+        <div class="aside-note">
+          근거가 있는 가격 판단
+          <p>공고 → 참가조건 → 공급원가 → 투찰 검토</p>
+          <button id="logout">잠그기</button>
+        </div>
+      </aside>
+      <main>
+        <header>
+          <div>
+            <div class="eyebrow">PUBLIC PROCUREMENT INTELLIGENCE</div>
+            <h1 id="page-title">오늘의 검토 순서</h1>
+            <p id="snapshot-time"></p>
+          </div>
+          <button id="reload">최신 자료 확인 ↻</button>
+        </header>
+        <div id="freshness" class="notice"></div>
+        <div id="metrics" class="metrics"></div>
+        <section id="work">
+          <p class="muted">
+            검토 순서는 준비된 근거에 따릅니다. 시장가격·낙찰가·이익이 확인되지
+            않은 공고는 수익성 추천으로 표시하지 않습니다.
+          </p>
+          <div class="toolbar">
+            <input
+              id="search"
+              placeholder="품목·기관·공고번호 검색"
+              aria-label="공고 검색"
+            /><select id="stage" aria-label="검토 단계">
+              <option value="active">마감·제외 빼고 전체</option>
+              <option value="all">저장된 전체 공고</option></select
+            ><span id="count"></span>
+          </div>
+          <div class="work-grid">
+            <div class="panel">
+              <div id="rows"></div>
+              <div class="pagination">
+                <button id="previous">← 이전</button><span id="page"></span
+                ><button id="next">다음 →</button>
+              </div>
+            </div>
+            <article id="detail" class="panel">
+              <div class="empty">
+                <h2>공고를 선택하세요</h2>
+                <p>
+                  검토 순서의 이유와 다음 할 일,<br />확인된 가격 근거를
+                  보여드립니다.
+                </p>
+              </div>
+            </article>
+          </div>
+        </section>
+        <section id="sources" hidden></section>
+        <section id="model" hidden></section>
+        <section id="policy" hidden></section>
+        <footer>
+          읽기 전용 웹 화면 · 자료 생성 이후 수정·취소 여부는 원문 확인 ·
+          견적·검토 입력은 기존 편집 워크벤치에서 진행합니다.
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>
