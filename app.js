@@ -156,14 +156,20 @@
     $("#snapshot-time").textContent =
       "분석 자료 생성 " + date(snapshot.generated_at) + " · 읽기 전용";
     const age = Date.now() - Date.parse(snapshot.generated_at);
-    const failed = snapshot.source_health.filter((r) => r.status !== "success" || !Number.isFinite(Date.parse(r.started_at)) || Date.now() - Date.parse(r.started_at) > 86400000);
+    const failed = snapshot.source_health.filter(
+      (r) =>
+        r.status !== "success" ||
+        !Number.isFinite(Date.parse(r.started_at)) ||
+        Date.now() - Date.parse(r.started_at) > 86400000,
+    );
     const n = $("#freshness");
     n.className =
       "notice" + (failed.length || age > 86400000 ? " warning" : "");
     n.textContent =
       (age > 86400000 ? "24시간 이상 지난 자료입니다. " : "") +
       (failed.length
-        ? failed.length + "개 자료에 수집 실패 또는 최근 24시간 수집 기록 부재가 있습니다. "
+        ? failed.length +
+          "개 자료에 수집 실패 또는 최근 24시간 수집 기록 부재가 있습니다. "
         : "") +
       "원문·첨부·공급 견적을 확인한 공고만 투찰 검토 대상으로 판단합니다.";
     const rows = currentRows(),
@@ -201,6 +207,7 @@
     stage.value = prior;
     renderRows();
     renderSources();
+    showAIStatus();
     renderModel();
     renderPolicy();
     if (selected) showDetail(selected);
@@ -441,6 +448,23 @@
         ]),
       ),
     );
+  }
+  function showAIStatus() {
+    const failures = (snapshot.last_research_attempts || []).filter(
+      (r) => r.status === "failed",
+    );
+    if (failures.length) {
+      const card = el("div", null, "data-card");
+      card.append(
+        el("h3", "AI 공개 문서 분석"),
+        el(
+          "p",
+          failures[0].detail || "최근 요청 미완료. 결과로 저장하지 않았습니다.",
+          "notice warning",
+        ),
+      );
+      $("#sources").append(card);
+    }
   }
   function renderModel() {
     const root = clear($("#model")),
