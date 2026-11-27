@@ -541,8 +541,14 @@
         )
           throw new Error("한전 SRM의 HTTPS 원문 주소를 입력하세요.");
         if (
-          [...source.searchParams.keys()].some((k) =>
-            /password|passwd|token|apikey|api_key|cookie|secret/i.test(k),
+          /;jsessionid=/i.test(source.href) ||
+          [
+            ...source.searchParams.keys(),
+            ...new URLSearchParams(source.hash.slice(1)).keys(),
+          ].some((k) =>
+            /password|passwd|token|apikey|api_key|cookie|secret|session/i.test(
+              k,
+            ),
           )
         )
           throw new Error("원문 주소에 인증 정보가 포함돼 있습니다.");
