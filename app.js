@@ -841,8 +841,8 @@
     }
     await historyLoad;
   }
-  const stopWords=new Set(["구매","물품","입찰","공고","납품","제조","설치","공급","계약","긴급","재공고","구입","purchase","supply"]);
-  const words=(s)=>new Set(String(s||"").replace(/^\[[^\]]+\]/,"").normalize("NFKC").toLowerCase().replace(/[^a-z0-9가-힣]+/g," ").trim().split(/\s+/).filter(w=>w&&!stopWords.has(w)));
+  const stopWords=new Set(["구매","물품","입찰","공고","납품","제조","설치","공급","계약","긴급","재공고","구입","purchase","supply","라이선스","갱신","유지보수","소프트웨어","구독","저장품","연간","정기","사업","외","등","license","renewal","maintenance","subscription","software","annual","year"]);
+  const words=(s)=>new Set(String(s||"").replace(/^\[[^\]]+\]/,"").normalize("NFKC").toLowerCase().replace(/[^a-z0-9가-힣]+/g," ").trim().split(/\s+/).map(w=>{for(let i=0;i<3;i++)w=w.replace(/(?:구매|구입|납품|제작|설치|갱신|유지보수|계약)(?:건)?$/, "");return w;}).filter(w=>w&&!stopWords.has(w)&&!/^\d+(?:년|월|개|식|대|품목|ea|set)?$/.test(w)));
   const tri=(s)=>{const t=[...words(s)].sort().join("");return new Set(Array.from({length:Math.max(0,t.length-2)},(_,i)=>t.slice(i,i+3)));};
   const overlap=(a,b)=>{let same=0;for(const v of a)if(b.has(v))same++;return same/Math.max(1,a.size+b.size-same);};
   function pastPrices(d) {
@@ -854,7 +854,7 @@
       const exact=d.product_key&&d.product_key===r.product_key;
       if(exact)score=1;
       else if(d.manufacturer_model&&String(d.manufacturer_model).toLowerCase()===String(r.manufacturer_model).toLowerCase())score=.98;
-      if(score<.18||r.awarded_at&&Date.parse(r.awarded_at)>Date.now())continue;
+      if(score<.25||r.awarded_at&&Date.parse(r.awarded_at)>Date.now())continue;
       seen.add(key);
       const qualified=!!(exact&&r.reviewed&&r.price_basis_verified&&r.source&&d.unit&&d.unit===r.unit&&Number(d.quantity)>0&&Number(d.quantity)===Number(r.quantity)&&d.contract_scope===r.contract_scope&&d.contract_scope==="fixed_total"&&d.money_basis===r.money_basis&&d.money_basis==="KRW_EX_VAT_CONTRACT_TOTAL"&&Date.now()-Date.parse(r.awarded_at)<=730*86400000&&Date.parse(r.label_available_at)<=Date.now()&&Number.isSafeInteger(Number(r.award_amount_ex_vat))&&Number(r.award_amount_ex_vat)>0);
       matches.push({...r,score,qualified});
