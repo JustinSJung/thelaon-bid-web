@@ -267,6 +267,7 @@
             date(row.bid_deadline),
         ),
       );
+      if (row.manual_source) b.append(el("small", "수동 반입 · 원문 미검토"));
       b.onclick = () => {
         selected = row.id;
         renderRows();
@@ -294,6 +295,14 @@
       el("p", row.institution, "muted"),
       link(row.source_url, "공고 원문 ↗"),
     );
+    if (row.manual_source)
+      root.append(
+        el(
+          "p",
+          "사용자가 복사한 공고입니다. API 정상 수집 또는 참가자격 확인으로 취급하지 않습니다.",
+          "notice warning",
+        ),
+      );
     const kv = el("div", null, "kv");
     for (const [label, value] of [
       ["추정가격·세금 별도", money(row.estimate_ex_vat)],
@@ -513,6 +522,92 @@
       ),
     );
   }
+  if ($("#intake-form"))
+    $("#intake-form").onsubmit = (event) => {
+      event.preventDefault();
+      const root = $("#intake-error");
+      root.textContent = "";
+      $("#intake-ready").hidden = true;
+      $("#intake-packet").value = "";
+      try {
+        const values = Object.fromEntries(new FormData(event.currentTarget));
+        const source = new URL(values.source_url);
+        if (
+          source.protocol !== "https:" ||
+          source.hostname !== "srm.kepco.net" ||
+          source.username ||
+          source.password ||
+          source.port
+        )
+          throw new Error("한전 SRM의 HTTPS 원문 주소를 입력하세요.");
+        if (
+          [...source.searchParams.keys()].some((k) =>
+            /password|passwd|token|apikey|api_key|cookie|secret/i.test(k),
+          )
+        )
+          throw new Error("원문 주소에 인증 정보가 포함돼 있습니다.");
+        if (
+          /-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----|-----BEGIN CERTIFICATE-----/.test(
+            values.notice_text,
+          )
+        )
+          throw new Error(
+            "공고문만 입력하세요. 인증서·비밀키는 반입하지 않습니다.",
+          );
+        if (!/^[A-Za-z0-9._-]{3,80}$/.test(values.notice_no))
+          throw new Error("공고번호를 확인하세요.");
+        if (values.notice_text.trim().length < 20)
+          throw new Error(
+            "참가조건·규격 등이 포함된 공고문을 20자 이상 입력하세요.",
+          );
+        for (const key of [
+          "published_at",
+          "application_deadline",
+          "bid_deadline",
+          "delivery_deadline",
+        ]) {
+          const text = values[key];
+          values[key] = text
+            ? (text.length === 16 ? text + ":00" : text) + "+09:00"
+            : null;
+        }
+        if (
+          values.application_deadline &&
+          values.bid_deadline &&
+          Date.parse(values.application_deadline) >
+            Date.parse(values.bid_deadline)
+        )
+          throw new Error("참가신청 마감과 투찰 마감 순서를 확인하세요.");
+        for (const key of ["quantity", "estimate_ex_vat"]) {
+          values[key] = values[key] || null;
+        }
+        const packet = JSON.stringify(
+          { version: 1, notices: [values] },
+          null,
+          2,
+        );
+        if (new TextEncoder().encode(packet).length > 60000)
+          throw new Error(
+            "반입 자료가 60KB를 초과했습니다. 공고문을 나눠 준비하세요.",
+          );
+        $("#intake-packet").value = packet;
+        $("#intake-ready").hidden = false;
+      } catch (error) {
+        root.textContent = error.message;
+      }
+    };
+  if ($("#copy-intake"))
+    $("#copy-intake").onclick = async () => {
+      const area = $("#intake-packet");
+      try {
+        await navigator.clipboard.writeText(area.value);
+        $("#copy-intake").textContent = "복사했습니다";
+      } catch {
+        area.focus();
+        area.select();
+        $("#copy-intake").textContent = "선택된 내용을 복사하세요";
+      }
+    };
   $("#login-form").onsubmit = async (event) => {
     event.preventDefault();
     const b = $("#unlock");
@@ -541,6 +636,12 @@
       "policy",
     ])
       clear($("#" + id));
+    if ($("#intake-form")) {
+      $("#intake-form").reset();
+      $("#intake-packet").value = "";
+      $("#intake-error").textContent = "";
+      $("#intake-ready").hidden = true;
+    }
     $("#snapshot-time").textContent = "";
     $("#freshness").textContent = "";
     $("#app").hidden = true;
@@ -580,8 +681,10 @@
     (b) =>
       (b.onclick = () => {
         const tab = b.dataset.tab;
-        for (const name of ["work", "sources", "model", "policy"])
-          $("#" + name).hidden = name !== tab;
+        for (const name of ["work", "sources", "model", "policy", "intake"]) {
+          const section = $("#" + name);
+          if (section) section.hidden = name !== tab;
+        }
         document
           .querySelectorAll("nav button")
           .forEach((n) => n.classList.toggle("active", n === b));
@@ -590,6 +693,7 @@
           sources: "수집 상태",
           model: "낙찰가격 · ML",
           policy: "사업 기준",
+          intake: "한전 공고 반입",
         }[tab];
       }),
   );

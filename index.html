@@ -9,8 +9,8 @@
       content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
     />
     <title>더라온 · 입찰 검토실</title>
-    <link rel="stylesheet" href="./styles.css" />
-    <script defer src="./app.js"></script>
+    <link rel="stylesheet" href="./styles.css?v=f60cd5b7e95c134b" />
+    <script defer src="./app.js?v=2219a5598a115b4e"></script>
   </head>
   <body>
     <section id="login">
@@ -38,7 +38,8 @@
           <button data-tab="work" class="active">01 검토 순서</button
           ><button data-tab="sources">02 수집 상태</button
           ><button data-tab="model">03 낙찰가격 · ML</button
-          ><button data-tab="policy">04 사업 기준</button>
+          ><button data-tab="policy">04 사업 기준</button
+          ><button data-tab="intake">05 한전 공고 반입</button>
         </nav>
         <div class="aside-note">
           근거가 있는 가격 판단
@@ -94,9 +95,140 @@
         <section id="sources" hidden></section>
         <section id="model" hidden></section>
         <section id="policy" hidden></section>
+        <section id="intake" hidden>
+          <h2>직접 확인한 한전 공고 가져오기</h2>
+          <p class="notice">
+            SRM에 직접 공동인증서 로그인한 후 공고 정보만 복사하세요.
+            인증서·비밀번호·로그인 쿠키는 입력하지 않습니다. 아래 입력은
+            브라우저에서 반입 자료를 준비하며, GitHub에서 직접 실행해야
+            저장됩니다.
+          </p>
+          <form id="intake-form" class="data-card intake-form">
+            <label
+              >회사<select name="company" required>
+                <option value="COM01">한국전력공사</option>
+                <option value="COM02">한국서부발전</option>
+                <option value="COM04">한국남부발전</option>
+                <option value="COM05">한국중부발전</option>
+                <option value="COM06">한국남동발전</option>
+                <option value="COM08">한국동서발전</option>
+                <option value="COM09">한국전력기술</option>
+                <option value="COM10">한전KPS</option>
+                <option value="COM11">한국전력거래소</option>
+                <option value="COM12">한국원자력연료</option>
+                <option value="COM03">한국전력국제원자력대학원대학교</option>
+                <option value="COM14">한국발전교육원</option>
+                <option value="COM16">한국해상풍력</option>
+                <option value="COM19">KAPES</option>
+              </select></label
+            >
+            <label
+              >공고번호<input
+                name="notice_no"
+                required
+                maxlength="80"
+                pattern="[A-Za-z0-9._-]{3,80}"
+            /></label>
+            <label
+              >공고 제목<input name="title" required maxlength="500"
+            /></label>
+            <label
+              >원문 주소<input
+                name="source_url"
+                type="url"
+                required
+                placeholder="https://srm.kepco.net/..."
+            /></label>
+            <label
+              >분류<select name="category">
+                <option value="미분류">분류 확인 전</option>
+                <option value="물품">물품 공고</option>
+              </select></label
+            >
+            <label
+              >참가신청 마감 · 한국시간<input
+                name="application_deadline"
+                type="datetime-local"
+            /></label>
+            <label
+              >투찰 마감 · 한국시간<input
+                name="bid_deadline"
+                type="datetime-local"
+            /></label>
+            <label
+              >공고 게시 일시 · 한국시간<input
+                name="published_at"
+                type="datetime-local"
+            /></label>
+            <label
+              >납품 기한 · 한국시간<input
+                name="delivery_deadline"
+                type="datetime-local"
+            /></label>
+            <label
+              >납품 수량 · 모르면 빈칸<input
+                name="quantity"
+                type="number"
+                step="any"
+                min="0"
+            /></label>
+            <label
+              >수량 단위<input
+                name="unit"
+                maxlength="40"
+                placeholder="개, 대, 식 등"
+            /></label>
+            <label
+              >추정가격 · 부가세 별도 총액 · 모르면 빈칸<input
+                name="estimate_ex_vat"
+                type="number"
+                step="any"
+                min="0"
+            /></label>
+            <label class="wide"
+              >복사한 공고문 · 참가조건·규격·납기 등<textarea
+                name="notice_text"
+                required
+                minlength="20"
+                maxlength="50000"
+              ></textarea>
+            </label>
+            <div class="wide">
+              <button class="primary" type="submit">반입 자료 준비</button>
+              <p id="intake-error" role="alert"></p>
+            </div>
+          </form>
+          <div id="intake-ready" class="data-card" hidden>
+            <h3>아직 저장되지 않았습니다</h3>
+            <p>
+              아래 내용을 복사한 뒤 GitHub에서 <b>Run workflow</b>를 열고
+              <b>notice_json</b>에 붙여넣어 실행하세요. 검증 후 비공개 저장소와
+              웹 화면에 반영됩니다.
+            </p>
+            <textarea
+              id="intake-packet"
+              readonly
+              aria-label="준비된 공고 반입 자료"
+            ></textarea>
+            <button id="copy-intake">반입 자료 복사</button>
+            <p>
+              <a
+                href="https://github.com/JustinSJung/thelaon-bid-assistant/actions/workflows/import-manual-notice.yml"
+                target="_blank"
+                rel="noopener noreferrer"
+                >GitHub 반영 화면 열기 ↗</a
+              >
+            </p>
+            <small
+              >수동 반입은 API 정상 수집·참가자격 확인·수익성 검증을 뜻하지
+              않습니다. 같은 공고의 API 자료가 있으면 API 자료를
+              우선합니다.</small
+            >
+          </div>
+        </section>
         <footer>
-          읽기 전용 웹 화면 · 자료 생성 이후 수정·취소 여부는 원문 확인 ·
-          견적·검토 입력은 기존 편집 워크벤치에서 진행합니다.
+          분석 조회 및 공고 반입 자료 준비 · 자료 생성 이후 수정·취소 여부는
+          원문 확인 · 견적·검토 입력은 기존 편집 워크벤치에서 진행합니다.
         </footer>
       </main>
     </div>
