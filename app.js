@@ -25,7 +25,11 @@
           timeZone: "Asia/Seoul",
         }).format(new Date(value)) + " KST"
       : "확인 필요";
-  const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  const b64 = (s) => {
+    const binary = atob(s), bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  };
   const clear = (n) => {
     n.replaceChildren();
     return n;
@@ -69,17 +73,30 @@
     values.forEach((v) => ul.append(el("li", v)));
     root.append(ul);
   }
-  async function unlock(secret) {
-    const response = await fetch("./snapshot.enc.json?t=" + Date.now(), {
-      cache: "no-store",
-      credentials: "omit",
-      referrerPolicy: "no-referrer",
-    });
-    if (!response.ok)
-      throw new Error("최신 분석 자료가 아직 준비되지 않았습니다.");
-    const e = await response.json();
-    if (e.format !== "thelaon:web:v1" || e.iterations !== 600000)
-      throw new Error("자료 형식을 확인하세요.");
+  let encryptedPromise = null, encryptedAt = 0;
+  function encryptedSnapshot(refresh = false) {
+    if (!encryptedPromise || refresh || Date.now() - encryptedAt > 5 * 60 * 1000) {
+      encryptedAt = Date.now();
+      const pending = fetch("./snapshot.enc.json", {
+        cache: "no-cache", credentials: "omit", referrerPolicy: "no-referrer",
+      }).then(async (response) => {
+        if (!response.ok) throw new Error("최신 분석 자료가 아직 준비되지 않았습니다.");
+        const e = await response.json();
+        if (!["thelaon:web:v1", "thelaon:web:v2:gzip"].includes(e.format) || e.iterations !== 600000)
+          throw new Error("페이지를 새로고침한 후 다시 열어주세요.");
+        return e;
+      });
+      encryptedPromise = pending;
+      pending.catch(() => { if (encryptedPromise === pending) encryptedPromise = null; });
+    }
+    return encryptedPromise;
+  }
+  async function unlock(secret, refresh = false) {
+    $("#login-status").textContent = "분석 자료 불러오는 중…";
+    const e = await encryptedSnapshot(refresh);
+    $("#login-status").textContent = "접속 암호 확인 중…";
+    if (e.format === "thelaon:web:v2:gzip" && typeof DecompressionStream !== "function")
+      throw new Error("압축 해제를 지원하는 최신 브라우저가 필요합니다.");
     const base = await crypto.subtle.importKey(
       "raw",
       new TextEncoder().encode(secret),
@@ -101,16 +118,19 @@
     );
     let data;
     try {
-      const text = await crypto.subtle.decrypt(
+      const bytes = await crypto.subtle.decrypt(
         {
           name: "AES-GCM",
           iv: b64(e.nonce),
-          additionalData: new TextEncoder().encode("thelaon:web:v1"),
+          additionalData: new TextEncoder().encode(e.format),
         },
         key,
         b64(e.ciphertext),
       );
-      data = JSON.parse(new TextDecoder().decode(text));
+      $("#login-status").textContent = "자료와 화면 준비 중…";
+      if (e.format === "thelaon:web:v2:gzip") {
+        data = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).json();
+      } else data = JSON.parse(new TextDecoder().decode(bytes));
     } catch {
       throw new Error("접속 암호가 다르거나 자료가 변경됐습니다.");
     }
@@ -120,6 +140,7 @@
     password = secret;
     $("#password").value = "";
     $("#login-error").textContent = "";
+    $("#login-status").textContent = "";
     $("#login").hidden = true;
     $("#login").style.display = "none";
     $("#app").hidden = false;
@@ -630,6 +651,7 @@
     } catch (error) {
       $("#login-error").textContent = error.message;
     } finally {
+      $("#login-status").textContent = "";
       b.disabled = false;
       b.textContent = "검토실 열기 →";
       $("#password").value = "";
@@ -665,7 +687,7 @@
     const b = $("#reload");
     b.disabled = true;
     try {
-      await unlock(password);
+      await unlock(password, true);
     } catch (error) {
       $("#freshness").textContent =
         error.message + " · 기존 자료를 표시합니다.";
@@ -710,4 +732,6 @@
         }[tab];
       }),
   );
+  // Download only public ciphertext while the user enters their password.
+  encryptedSnapshot().catch(() => {});
 })();
