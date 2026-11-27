@@ -845,6 +845,7 @@
   const words=(s)=>new Set(String(s||"").replace(/^\[[^\]]+\]/,"").normalize("NFKC").toLowerCase().replace(/[^a-z0-9가-힣]+/g," ").trim().split(/\s+/).map(w=>{for(let i=0;i<3;i++)w=w.replace(/(?:구매|구입|납품|제작|설치|갱신|유지보수|계약)(?:건)?$/, "");return w;}).filter(w=>w&&!stopWords.has(w)&&!/^\d+(?:년|월|개|식|대|품목|ea|set)?$/.test(w)));
   const tri=(s)=>{const t=[...words(s)].sort().join("");return new Set(Array.from({length:Math.max(0,t.length-2)},(_,i)=>t.slice(i,i+3)));};
   const overlap=(a,b)=>{let same=0;for(const v of a)if(b.has(v))same++;return same/Math.max(1,a.size+b.size-same);};
+  const historyKind=(s)=>/라이선스|구독|license|subscription/i.test(s||"")?"license":/유지보수|유지관리|maintenance/i.test(s||"")?"service":"goods";
   function pastPrices(d) {
     if(!historicalIndex)historicalIndex=(snapshot.history_index||[]).map(r=>({r,w:words(r.title),g:tri(r.title)}));
     const w=words(d.title),g=tri(d.title),seen=new Set(),matches=[];
@@ -852,6 +853,7 @@
       const r=item.r,key=r.tender_id||r.id;if(!key||key===d.id||seen.has(key))continue;
       let score=Math.max(overlap(w,item.w),overlap(g,item.g));
       const exact=d.product_key&&d.product_key===r.product_key;
+      if(!exact&&historyKind(d.title)!==historyKind(r.title))continue;
       if(exact)score=1;
       else if(d.manufacturer_model&&String(d.manufacturer_model).toLowerCase()===String(r.manufacturer_model).toLowerCase())score=.98;
       if(score<.25||r.awarded_at&&Date.parse(r.awarded_at)>Date.now())continue;
@@ -900,7 +902,8 @@
     for(const p of d.market?.observations||[]) {
       const box=el("p");box.append(el("strong",`${p.unit_price} ${p.currency} · ${p.model||p.title||"모델 미확인"}`),el("small",`관찰 판매가 · 세금·단위·공급 가능 여부 미검토 · ${date(p.checked_at)}`),link(p.source,"판매 페이지"));root.append(box);
     }
-    for(const run of d.market_search||[])for(const region of run.results||[])for(const source of region.sources||[]){const p=el("p");p.append(el("small",region.region+" 검색 후보 · 가격·규격 확인 필요"),link(source.url,source.title||"검색 출처"));root.append(p);}
+    for(const run of d.market_search||[])if(run.identification?.note)root.append(el("p",run.identification.note,"notice"));
+    for(const run of d.market_search||[])for(const region of run.results||[])for(const source of region.sources||[]){const p=el("p");p.append(el("small",region.region+" 검색 후보 · "+(source.price_status||"가격·규격 확인 필요")),link(source.url,source.title||"검색 출처"));root.append(p);}
     const details=el("details");details.append(el("summary","국내·해외 가격 찾기와 상품 주소 등록"),el("p","검색 바로가기는 검색 결과 자동수집이 아닙니다. 찾은 공개 상품 주소는 등록 후 갱신하며, 수집 제한·가격 미표시는 미확인으로 표시합니다.","muted"));
     const term=d.manufacturer_model||String(d.title||"").replace(/^\[[^\]]+\]/,"");
     for(const [name,base,key,q] of [["네이버 국내","https://search.naver.com/search.naver","query",term+" 가격"],["Google 국내·해외","https://www.google.com/search","q",term+" price"],["중국 공급처","https://www.google.com/search","q",term+" China manufacturer wholesale price"],["대만 공급처","https://www.google.com/search","q",term+" Taiwan manufacturer price"],["미국 공급처","https://www.google.com/search","q",term+" USA distributor price"]]){const p=el("p"),u=new URL(base);u.searchParams.set(key,q);p.append(link(u.href,name));details.append(p);}
