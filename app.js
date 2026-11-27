@@ -91,12 +91,8 @@
     }
     return encryptedPromise;
   }
-  async function unlock(secret, refresh = false) {
-    $("#login-status").textContent = "분석 자료 불러오는 중…";
-    const e = await encryptedSnapshot(refresh);
-    $("#login-status").textContent = "접속 암호 확인 중…";
-    if (e.format === "thelaon:web:v2:gzip" && typeof DecompressionStream !== "function")
-      throw new Error("압축 해제를 지원하는 최신 브라우저가 필요합니다.");
+  async function decryptData(e,secret) {
+    if (!["thelaon:web:v1","thelaon:web:v2:gzip"].includes(e.format) || e.iterations!==600000)throw new Error("자료 형식 확인 필요");
     const base = await crypto.subtle.importKey(
       "raw",
       new TextEncoder().encode(secret),
@@ -127,15 +123,24 @@
         key,
         b64(e.ciphertext),
       );
-      $("#login-status").textContent = "자료와 화면 준비 중…";
       if (e.format === "thelaon:web:v2:gzip") {
         data = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).json();
       } else data = JSON.parse(new TextDecoder().decode(bytes));
     } catch {
       throw new Error("접속 암호가 다르거나 자료가 변경됐습니다.");
     }
+    return data;
+  }
+  async function unlock(secret, refresh = false) {
+    $("#login-status").textContent = "분석 자료 불러오는 중…";
+    const e = await encryptedSnapshot(refresh);
+    $("#login-status").textContent = "접속 암호 확인 중…";
+    if (e.format === "thelaon:web:v2:gzip" && typeof DecompressionStream !== "function")
+      throw new Error("압축 해제를 지원하는 최신 브라우저가 필요합니다.");
+    const data = await decryptData(e,secret);
     if (data.version !== 1 || !Array.isArray(data.worklist?.rows))
       throw new Error("검토 자료 형식이 올바르지 않습니다.");
+    if(historyAbort)historyAbort.abort();historyLoad=null;
     historicalIndex = null;
     snapshot = data;
     password = secret;
@@ -339,9 +344,8 @@
           : "규격서 확인 필요",
       ],
       ["참가신청 마감", date(row.application_deadline)],
-      ["수집 경로", row.source_system || "미확인"],
-      ["공개 원문 확인", date(d.public_print_checked_at)],
-      ["마감 정보 확인 수준", d.date_precision || "원문 확인 필요"],
+      ["납기", date(d.delivery_deadline)],
+      ["필요 매입자금", money(row.economics?.working_capital)],
       ["투찰 마감", row.bid_deadline ? date(row.bid_deadline) : row.bid_end_date ? row.bid_end_date + " (시각 미확인)" : "미확인"],
     ]) {
       const n = el("div");
@@ -663,6 +667,7 @@
     }
   };
   $("#logout").onclick = () => {
+    if(historyAbort)historyAbort.abort();historyLoad=null;
     historicalIndex = null;
     snapshot = null;
     password = null;
@@ -749,10 +754,11 @@
   function switchTab(name) { document.querySelector(`nav [data-tab="${name}"]`).click(); }
   function resultFields() {
     const f=$("#feedback-form"), result=["won","lost"].includes(f.elements.status.value);
-    $("#feedback-result").hidden=!result;
+    $("#feedback-result").hidden=!result;$("#feedback-result").disabled=!result;
     for(const key of ["winning_amount","awarded_at","result_source"])f.elements[key].required=result;
     $("#feedback-tax").hidden=f.elements.vat_basis.value!=="included";
     f.elements.vat_rate.required=f.elements.vat_basis.value==="included";
+    f.elements.vat_rate.disabled=f.elements.vat_basis.value!=="included";
   }
   function chooseFeedback(id, old=null) {
     const d=snapshot.details[id];if(!d)return;
@@ -812,7 +818,26 @@
       prepareSave({version:1,record:r},outcomeNames[r.status]);
     } catch(e){$("#feedback-error").textContent=e.message;}
   };
-  let historicalIndex=null;
+  let historicalIndex=null,historyLoad=null,historyAbort=null;
+  async function loadHistory() {
+    if(!snapshot || snapshot.history_index)return;
+    if(!historyLoad){
+      const active=snapshot,secret=password;historyAbort=new AbortController();
+      historyLoad=(async()=>{
+        if(active.history_asset!=="history.enc.json")throw new Error("과거 자료 형식을 확인하세요.");
+        const response=await fetch("./history.enc.json",{cache:"no-cache",credentials:"omit",referrerPolicy:"no-referrer",signal:historyAbort.signal});
+        if(!response.ok)throw new Error("과거 자료를 불러오지 못했습니다.");
+        const bytes=await response.arrayBuffer();
+        const digest=[...new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))].map(b=>b.toString(16).padStart(2,"0")).join("");
+        if(digest!==active.history_sha256)throw new Error("자료가 갱신됐습니다. 최신 자료 확인을 눌러주세요.");
+        const data=await decryptData(JSON.parse(new TextDecoder().decode(bytes)),secret);
+        if(data.version!==1||!Array.isArray(data.rows))throw new Error("과거 자료 형식 확인 필요");
+        if(snapshot===active){active.history_index=data.rows;historicalIndex=null;}
+      })();
+      historyLoad.catch(()=>{if(snapshot===active)historyLoad=null;});
+    }
+    await historyLoad;
+  }
   const stopWords=new Set(["구매","물품","입찰","공고","납품","제조","설치","공급","계약","긴급","재공고","구입","purchase","supply"]);
   const words=(s)=>new Set(String(s||"").replace(/^\[[^\]]+\]/,"").normalize("NFKC").toLowerCase().replace(/[^a-z0-9가-힣]+/g," ").trim().split(/\s+/).filter(w=>w&&!stopWords.has(w)));
   const tri=(s)=>{const t=[...words(s)].sort().join("");return new Set(Array.from({length:Math.max(0,t.length-2)},(_,i)=>t.slice(i,i+3)));};
@@ -834,8 +859,12 @@
     matches.sort((a,b)=>Number(b.qualified)-Number(a.qualified)||b.score-a.score);
     return matches;
   }
-  function renderHistory(root,d) {
+  async function renderHistory(parent,d) {
+    const root=el("section");root.dataset.historyState="loading";parent.append(root);
     root.append(el("h3","비슷한 품목의 과거 낙찰가격"));
+    const loading=el("p","과거 낙찰자료를 불러오는 중…","muted");root.append(loading);
+    try{await loadHistory();}catch(e){if(snapshot&&selected===d.id)loading.textContent=e.message;return;}
+    if(!snapshot||selected!==d.id||!root.isConnected)return;loading.remove();root.dataset.historyState="ready";
     const rows=pastPrices(d),values=rows.filter(r=>r.qualified).map(r=>Number(r.award_amount_ex_vat)).sort((a,b)=>a-b);
     if(values.length>=3){const mid=Math.floor(values.length/2),median=values.length%2?values[mid]:values[mid-1]/2+values[mid]/2;root.append(el("p",`동일 규격·수량 ${values.length}건의 과거 중앙값 ${money(median)} (부가세 별도). ML 예측·최종 투찰가는 별도입니다.`,"notice"));}
     if(!rows.length)root.append(el("p","연결할 만한 과거 품목을 찾지 못했습니다.","muted"));
