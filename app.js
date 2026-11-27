@@ -183,7 +183,7 @@
   }
   function render() {
     $("#snapshot-time").textContent =
-      "분석 자료 생성 " + date(snapshot.generated_at) + " · 읽기 전용";
+      "분석 자료 생성 " + date(snapshot.generated_at);
     const age = Date.now() - Date.parse(snapshot.generated_at);
     const failed = snapshot.source_health.filter(
       (r) =>
@@ -365,6 +365,7 @@
       }
     }
     const bidButton=el("button","이 공고의 투찰 기록", "primary");bidButton.onclick=()=>chooseFeedback(id);root.append(bidButton);
+    renderSpecification(root,d);
     renderHistory(root,d);
     renderMarketDiscovery(root,d);
     root.append(el("h3", "확인된 시장가격"));
@@ -755,7 +756,7 @@
   function resultFields() {
     const f=$("#feedback-form"), result=["won","lost"].includes(f.elements.status.value);
     $("#feedback-result").hidden=!result;$("#feedback-result").disabled=!result;
-    for(const key of ["winning_amount","awarded_at","result_source"])f.elements[key].required=result;
+    for(const key of ["winning_amount","awarded_at","result_source"])f.elements[key].required=result && f.elements.result_verified.checked;
     $("#feedback-tax").hidden=f.elements.vat_basis.value!=="included";
     f.elements.vat_rate.required=f.elements.vat_basis.value==="included";
     f.elements.vat_rate.disabled=f.elements.vat_basis.value!=="included";
@@ -782,7 +783,7 @@
     for(const r of snapshot.outcomes||[]) {
       const card=el("div",null,"data-card"),d=snapshot.details[r.opportunity_id];
       card.append(el("strong",d?.title||r.snapshot?.title||r.opportunity_id),el("p",`${outcomeNames[r.status]||r.status} · 우리 투찰 ${money(r.own_bid_amount)} · 실제 낙찰 ${money(r.winning_amount)}`));
-      if(r.result_candidate && r.status==="submitted")card.append(el("p","공식 수집자료에서 결과를 찾았습니다. 금액·당사 낙찰 여부를 확인하세요.","notice"));
+      if(r.result_candidate && !r.result_verified)card.append(el("p","공식 수집자료에서 결과를 찾았습니다. 금액·당사 낙찰 여부를 확인하세요.","notice"));
       const b=el("button","결과 입력·수정");b.onclick=()=>chooseFeedback(r.opportunity_id,r);card.append(b);root.append(card);
     }
     if(!root.childElementCount)root.append(el("p","아직 투찰 기록이 없습니다. 공고를 선택해 ‘투찰 기록’을 눌러 시작하세요.","muted"));
@@ -794,7 +795,9 @@
     url.searchParams.set("title","[더라온 기록] "+label);url.searchParams.set("body",body);
     $("#feedback-packet").value=body;$("#feedback-save").href=url.href;$("#feedback-ready").hidden=false;
     switchTab("feedback");
+    window.open(url.href,"_blank","noopener,noreferrer");
   }
+  $("#feedback-form").elements.result_verified.onchange=resultFields;
   $("#feedback-form").elements.status.onchange=resultFields;
   $("#feedback-form").elements.vat_basis.onchange=resultFields;
   $("#feedback-form").onsubmit=(event)=>{
@@ -806,9 +809,9 @@
         reviewer:v.reviewer,result_verified:f.elements.result_verified.checked && ["won","lost"].includes(v.status),reason:v.reason,winner_name:v.winner_name};
       if(Date.parse(r.submitted_at)>Date.now())throw new Error("미래의 투찰은 실제 기록으로 저장할 수 없습니다.");
       if(["won","lost"].includes(v.status)) {
-        const u=new URL(v.result_source);
-        if(u.protocol!=="https:"||u.username||u.password||u.hash||/token|secret|password|cookie|session|apikey/i.test(u.search+u.pathname))throw new Error("인증정보 없는 공개 HTTPS 결과 주소를 입력하세요.");
-        if(v.status==="won" && Number(v.winning_amount)!==Number(v.own_bid_amount))throw new Error("낙찰금액과 우리 투찰금액을 대조하세요.");
+        const u=v.result_source ? new URL(v.result_source) : null;
+        if(u && (u.protocol!=="https:"||u.username||u.password||u.hash||/token|secret|password|cookie|session|apikey/i.test(u.search+u.pathname)))throw new Error("인증정보 없는 공개 HTTPS 결과 주소를 입력하세요.");
+        if(v.status==="won" && v.winning_amount && Number(v.winning_amount)!==Number(v.own_bid_amount))throw new Error("낙찰금액과 우리 투찰금액을 대조하세요.");
         Object.assign(r,{winning_amount:v.winning_amount,awarded_at:isoKst(v.awarded_at),result_source:v.result_source});
       }
       if(f.elements.fields_verified.checked) {
@@ -871,8 +874,26 @@
     for(const r of rows.slice(0,5)) {
       const box=el("details");box.append(el("summary",`${r.title||"공고명 미확인"} · ${Number(r.award_amount_ex_vat||r.award_amount_raw)>0?money(r.award_amount_ex_vat||r.award_amount_raw):"금액 미확인"}`));
       box.append(el("p",r.qualified?"동일 규격·동일 수량·세금 기준 확인된 과거 사례":"제목·모델이 비슷한 참고 사례. 규격·수량·단가/총액·세금 대조 필요"),el("p",`기관 ${r.institution||"미확인"} · 낙찰 ${date(r.awarded_at)} · 수량 ${r.quantity||"미확인"} ${r.unit||""}`));
-      if(r.source)box.append(link(r.source,"가격 출처 확인"));root.append(box);
+      if(r.feature_source)box.append(link(r.feature_source,"연결된 공고 원문"));
+      if(r.source)box.append(link(r.source,r.source.includes("data.go.kr")?"공식 수집 API 안내":"개찰결과 출처"));root.append(box);
     }
+  }
+  function renderSpecification(root,d) {
+    const box=el("details",null,"spec-fields");box.append(el("summary","비교할 제품·규격 확인"),el("p","투찰 전에도 모델을 등록할 수 있습니다. 같은 규격 식별값을 쓰면 과거 낙찰가와 더 정확하게 연결됩니다.","muted"));
+    const inputs={};
+    for(const [key,label,type] of [["product_key","동일 규격 식별값 (제조사/모델/주요 규격)","text"],["manufacturer_model","모델","text"],["quantity","수량","number"],["unit","단위","text"],["estimate_ex_vat","공고 추정가격 총액 (부가세 별도)","number"],["reviewer","확인한 사람","text"]]) {
+      const wrap=el("label",label),input=el("input");input.type=type;input.value=d[key]||"";
+      if(type==="number"){input.min="0";input.step="any";}else input.maxLength=300;
+      inputs[key]=input;wrap.append(input);box.append(wrap);
+    }
+    const label=el("label"),verified=el("input");verified.type="checkbox";label.append(verified,document.createTextNode(" 원문에서 규격·수량·단위·총액·부가세 별도 기준을 대조했습니다"));box.append(label);
+    const error=el("p"),button=el("button","확인한 규격 저장");button.onclick=()=>{try{
+      const value={opportunity_id:d.id,revision:d.revision,verified:verified.checked};
+      for(const [k,input]of Object.entries(inputs))value[k]=input.value;
+      if(!value.reviewer||!value.product_key&&!value.manufacturer_model)throw new Error("모델 또는 규격 식별값과 확인한 사람을 입력하세요.");
+      if(value.verified&&(!value.product_key||!value.unit||!(Number(value.quantity)>0)||!(Number(value.estimate_ex_vat)>0)))throw new Error("확정하려면 규격·수량·단위·추정가격을 모두 확인하세요.");
+      prepareSave({version:1,specification:value},"품목 규격 확인");
+    }catch(e){error.textContent=e.message;}};box.append(button,error);root.append(box);
   }
   function renderMarketDiscovery(root,d) {
     root.append(el("h3","국내·해외 시장가격"));

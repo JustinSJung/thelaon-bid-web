@@ -543,3 +543,6 @@ nav summary { cursor: pointer; color: #b4c5d7; padding: 12px; font-size: 12px; }
 #feedback-form details label { display: block; margin-top: 12px; }
 #feedback-form input[type=checkbox] { width: auto; margin-right: 8px; }
 #feedback-ready a { display: inline-block; margin: 8px 0; }
+
+.spec-fields label { display: block; margin: 12px 0; }
+.spec-fields input[type=checkbox] { width: auto; }
