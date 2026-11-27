@@ -318,6 +318,7 @@
       ["참가신청 마감", date(row.application_deadline)],
       ["수집 경로", row.source_system || "미확인"],
       ["공개 원문 확인", date(d.public_print_checked_at)],
+      ["마감 정보 확인 수준", d.date_precision || "원문 확인 필요"],
       ["투찰 마감", row.bid_deadline ? date(row.bid_deadline) : row.bid_end_date ? row.bid_end_date + " (시각 미확인)" : "미확인"],
     ]) {
       const n = el("div");
