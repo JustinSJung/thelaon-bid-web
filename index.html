@@ -9,8 +9,8 @@
       content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
     />
     <title>더라온 · 입찰 검토실</title>
-    <link rel="stylesheet" href="./styles.css?v=f60cd5b7e95c134b" />
-    <script defer src="./app.js?v=520401d20d0fb2ca"></script>
+    <link rel="stylesheet" href="./styles.css?v=85a5a320d4b99d2a" />
+    <script defer src="./app.js?v=f9953901df2bdebe"></script>
   </head>
   <body>
     <section id="login">
@@ -36,11 +36,14 @@
       <aside>
         <div class="brand">THE LAON<small>입찰 검토실</small></div>
         <nav>
-          <button data-tab="work" class="active">01 검토 순서</button
-          ><button data-tab="sources">02 수집 상태</button
-          ><button data-tab="model">03 낙찰가격 · ML</button
-          ><button data-tab="policy">04 사업 기준</button
-          ><button data-tab="intake">05 한전 공고 반입</button>
+          <button data-tab="work" class="active">입찰 검토</button>
+          <button data-tab="feedback">투찰·결과 기록</button>
+          <button data-tab="sources">수집 상태</button>
+          <details id="admin-tools"><summary>상세 관리</summary>
+            <button data-tab="model">낙찰가격 · ML</button>
+            <button data-tab="policy">사업 기준</button>
+            <button data-tab="intake">공고 직접 반입</button>
+          </details>
         </nav>
         <div class="aside-note">
           근거가 있는 가격 판단
@@ -92,6 +95,42 @@
               </div>
             </article>
           </div>
+        </section>
+        <section id="feedback" hidden>
+          <h2>우리의 투찰과 실제 결과</h2>
+          <p class="muted">공고에서 ‘투찰 기록’을 누르세요. 기록된 입찰은 결과가 나오면 갱신할 수 있습니다.</p>
+          <div id="feedback-list"></div>
+          <form id="feedback-form" class="data-card intake-form" hidden>
+            <h3 id="feedback-title"></h3>
+            <input name="opportunity_id" type="hidden"><input name="revision" type="hidden">
+            <label>실제 투찰금액 (원)<input name="own_bid_amount" type="number" min="1" step="any" required></label>
+            <label>실제 투찰 일시<input name="submitted_at" type="datetime-local" required></label>
+            <label>진행 상태<select name="status"><option value="submitted">투찰 완료 · 결과 대기</option><option value="won">낙찰 성공</option><option value="lost">미낙찰</option><option value="invalid">무효 · 자격 탈락</option><option value="no_award">유찰</option><option value="cancelled">공고 취소</option><option value="withdrawn">투찰 철회</option></select></label>
+            <label>입력 금액의 부가세<select name="vat_basis"><option value="unverified">아직 확인하지 않음</option><option value="included">부가세 포함</option><option value="excluded">부가세 별도</option></select></label>
+            <label id="feedback-tax" hidden>확인한 부가세율 (10%는 0.1)<input name="vat_rate" type="number" min="0" max="0.99" step="any"></label>
+            <fieldset id="feedback-result" hidden><legend>공식 개찰결과</legend>
+              <label>실제 낙찰금액 (원)<input name="winning_amount" type="number" min="1" step="any"></label>
+              <label>개찰결과 일시<input name="awarded_at" type="datetime-local"></label>
+              <label>개찰결과 원문 주소<input name="result_source" type="url" placeholder="https://"></label>
+              <label>낙찰 업체명 (선택)<input name="winner_name" maxlength="200"></label>
+              <label><input name="result_verified" type="checkbox">공식 결과와 금액을 대조했습니다</label>
+            </fieldset>
+            <label>확인한 사람<input name="reviewer" maxlength="100" placeholder="담당자 이름"></label>
+            <details><summary>규격·원가·미낙찰 사유 등 상세 입력</summary>
+              <p class="muted">투찰 시점에 확인한 규격은 학습에 활용합니다. 과거 시점의 자료를 임의로 만들어 학습하지 않습니다.</p>
+              <label>동일 규격 식별값<input name="product_key" placeholder="제조사 / 모델 / 주요 규격"></label>
+              <label>모델<input name="manufacturer_model"></label>
+              <label>수량<input name="quantity" type="number" min="0" step="any"></label>
+              <label>단위<input name="unit" placeholder="EA, m 등"></label>
+              <label>공고 추정가격 총액 (부가세 별도)<input name="estimate_ex_vat" type="number" min="0" step="any"></label>
+              <label><input name="fields_verified" type="checkbox">원문에서 동일 규격·수량·총액·부가세 별도 기준을 확인했습니다</label>
+              <label>결과 사유·메모<textarea name="reason" maxlength="1000" rows="3"></textarea></label>
+            </details>
+            <button class="primary" type="submit">GitHub에서 저장하기</button>
+            <p class="muted">다음 GitHub 창에서 ‘Submit new issue’를 누르면 비공개 저장·검증·웹 갱신이 실행됩니다. 키나 비밀번호를 입력하지 마세요.</p>
+          </form>
+          <p id="feedback-error" role="alert"></p>
+          <div id="feedback-ready" class="notice" hidden><strong>아직 저장되지 않았습니다.</strong><p>GitHub에서 제출하면 저장됩니다. 완료 후 ‘최신 자료 확인’을 누르세요.</p><a id="feedback-save" target="_blank" rel="noopener noreferrer">GitHub 저장 창 열기 →</a><details><summary>직접 실행용 자료</summary><textarea id="feedback-packet" readonly rows="7" aria-label="투찰 기록 반입 자료"></textarea></details></div>
         </section>
         <section id="sources" hidden></section>
         <section id="model" hidden></section>

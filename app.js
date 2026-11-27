@@ -136,6 +136,7 @@
     }
     if (data.version !== 1 || !Array.isArray(data.worklist?.rows))
       throw new Error("검토 자료 형식이 올바르지 않습니다.");
+    historicalIndex = null;
     snapshot = data;
     password = secret;
     $("#password").value = "";
@@ -233,6 +234,7 @@
     showAIStatus();
     renderModel();
     renderPolicy();
+    renderFeedback();
     if (selected) showDetail(selected);
   }
   function renderRows() {
@@ -358,6 +360,9 @@
         root.append(el("p", c.label), el("div", c.excerpt, "quote"));
       }
     }
+    const bidButton=el("button","이 공고의 투찰 기록", "primary");bidButton.onclick=()=>chooseFeedback(id);root.append(bidButton);
+    renderHistory(root,d);
+    renderMarketDiscovery(root,d);
     root.append(el("h3", "확인된 시장가격"));
     const market = d.market.verified_prices.filter(
       (p) => Date.parse(p.valid_until) > Date.now(),
@@ -658,6 +663,7 @@
     }
   };
   $("#logout").onclick = () => {
+    historicalIndex = null;
     snapshot = null;
     password = null;
     selected = null;
@@ -668,6 +674,7 @@
       "sources",
       "model",
       "policy",
+      "feedback-list",
     ])
       clear($("#" + id));
     if ($("#intake-form")) {
@@ -676,6 +683,9 @@
       $("#intake-error").textContent = "";
       $("#intake-ready").hidden = true;
     }
+    $("#feedback-form").reset();$("#feedback-form").hidden=true;
+    $("#feedback-packet").value="";$("#feedback-ready").hidden=true;$("#feedback-save").removeAttribute("href");$("#feedback-title").textContent="";
+    $("#feedback-error").textContent="";
     $("#snapshot-time").textContent = "";
     $("#freshness").textContent = "";
     $("#app").hidden = true;
@@ -716,7 +726,7 @@
     (b) =>
       (b.onclick = () => {
         const tab = b.dataset.tab;
-        for (const name of ["work", "sources", "model", "policy", "intake"]) {
+        for (const name of ["work", "feedback", "sources", "model", "policy", "intake"]) {
           const section = $("#" + name);
           if (section) section.hidden = name !== tab;
         }
@@ -725,6 +735,7 @@
           .forEach((n) => n.classList.toggle("active", n === b));
         $("#page-title").textContent = {
           work: "오늘의 검토 순서",
+          feedback:"우리의 투찰과 실제 결과",
           sources: "수집 상태",
           model: "낙찰가격 · ML",
           policy: "사업 기준",
@@ -732,6 +743,122 @@
         }[tab];
       }),
   );
+  const outcomeNames = {submitted:"결과 대기",won:"낙찰 성공",lost:"미낙찰",invalid:"무효·자격 탈락",cancelled:"공고 취소",no_award:"유찰",withdrawn:"철회"};
+  const localTime = (value) => new Date(Date.parse(value || new Date().toISOString()) + 9*3600000).toISOString().slice(0,16);
+  const isoKst = (value) => value ? value + ":00+09:00" : null;
+  function switchTab(name) { document.querySelector(`nav [data-tab="${name}"]`).click(); }
+  function resultFields() {
+    const f=$("#feedback-form"), result=["won","lost"].includes(f.elements.status.value);
+    $("#feedback-result").hidden=!result;
+    for(const key of ["winning_amount","awarded_at","result_source"])f.elements[key].required=result;
+    $("#feedback-tax").hidden=f.elements.vat_basis.value!=="included";
+    f.elements.vat_rate.required=f.elements.vat_basis.value==="included";
+  }
+  function chooseFeedback(id, old=null) {
+    const d=snapshot.details[id];if(!d)return;
+    const f=$("#feedback-form");f.reset();f.hidden=false;
+    $("#feedback-title").textContent=d.title;
+    for(const key of ["opportunity_id","revision"])f.elements[key].value=key==="opportunity_id"?id:(old?.revision||d.revision);
+    f.elements.submitted_at.value=localTime(old?.submitted_at);
+    for(const key of ["own_bid_amount","status","vat_basis","vat_rate","winning_amount","result_source","winner_name","reviewer","reason"])
+      if(old?.[key]!=null)f.elements[key].value=old[key];
+    for(const key of ["product_key","manufacturer_model","quantity","unit","estimate_ex_vat"])f.elements[key].value=d[key]||"";
+    if(old?.awarded_at)f.elements.awarded_at.value=localTime(old.awarded_at);
+    f.elements.result_verified.checked=old?.result_verified===true;
+    if(old?.result_candidate && !old.winning_amount){
+      f.elements.winning_amount.value=old.result_candidate.award_amount_raw||"";
+      if(old.result_candidate.awarded_at)f.elements.awarded_at.value=localTime(old.result_candidate.awarded_at);
+    }
+    $("#feedback-ready").hidden=true;$("#feedback-error").textContent="";resultFields();switchTab("feedback");
+  }
+  function renderFeedback() {
+    const root=clear($("#feedback-list"));
+    for(const r of snapshot.outcomes||[]) {
+      const card=el("div",null,"data-card"),d=snapshot.details[r.opportunity_id];
+      card.append(el("strong",d?.title||r.snapshot?.title||r.opportunity_id),el("p",`${outcomeNames[r.status]||r.status} · 우리 투찰 ${money(r.own_bid_amount)} · 실제 낙찰 ${money(r.winning_amount)}`));
+      if(r.result_candidate && r.status==="submitted")card.append(el("p","공식 수집자료에서 결과를 찾았습니다. 금액·당사 낙찰 여부를 확인하세요.","notice"));
+      const b=el("button","결과 입력·수정");b.onclick=()=>chooseFeedback(r.opportunity_id,r);card.append(b);root.append(card);
+    }
+    if(!root.childElementCount)root.append(el("p","아직 투찰 기록이 없습니다. 공고를 선택해 ‘투찰 기록’을 눌러 시작하세요.","muted"));
+  }
+  function prepareSave(packet, label) {
+    const body=JSON.stringify(packet,null,2);
+    if(new TextEncoder().encode(body).length>15000)throw new Error("기록이 너무 깁니다. 메모 길이를 줄여주세요.");
+    const url=new URL("https://github.com/JustinSJung/thelaon-bid-assistant/issues/new");
+    url.searchParams.set("title","[더라온 기록] "+label);url.searchParams.set("body",body);
+    $("#feedback-packet").value=body;$("#feedback-save").href=url.href;$("#feedback-ready").hidden=false;
+    switchTab("feedback");
+  }
+  $("#feedback-form").elements.status.onchange=resultFields;
+  $("#feedback-form").elements.vat_basis.onchange=resultFields;
+  $("#feedback-form").onsubmit=(event)=>{
+    event.preventDefault();$("#feedback-error").textContent="";
+    try {
+      const f=$("#feedback-form"),v=Object.fromEntries(new FormData(f));
+      const r={opportunity_id:v.opportunity_id,revision:v.revision,own_bid_amount:v.own_bid_amount,
+        submitted_at:isoKst(v.submitted_at),status:v.status,vat_basis:v.vat_basis,vat_rate:v.vat_rate||null,
+        reviewer:v.reviewer,result_verified:f.elements.result_verified.checked && ["won","lost"].includes(v.status),reason:v.reason,winner_name:v.winner_name};
+      if(Date.parse(r.submitted_at)>Date.now())throw new Error("미래의 투찰은 실제 기록으로 저장할 수 없습니다.");
+      if(["won","lost"].includes(v.status)) {
+        const u=new URL(v.result_source);
+        if(u.protocol!=="https:"||u.username||u.password||u.hash||/token|secret|password|cookie|session|apikey/i.test(u.search+u.pathname))throw new Error("인증정보 없는 공개 HTTPS 결과 주소를 입력하세요.");
+        if(v.status==="won" && Number(v.winning_amount)!==Number(v.own_bid_amount))throw new Error("낙찰금액과 우리 투찰금액을 대조하세요.");
+        Object.assign(r,{winning_amount:v.winning_amount,awarded_at:isoKst(v.awarded_at),result_source:v.result_source});
+      }
+      if(f.elements.fields_verified.checked) {
+        if(!v.reviewer||!v.product_key||!v.unit||!(Number(v.quantity)>0)||!(Number(v.estimate_ex_vat)>0))throw new Error("규격 확인에는 담당자·식별값·수량·단위·추정가격이 필요합니다.");
+        r.case_fields=Object.fromEntries(["product_key","manufacturer_model","quantity","unit","estimate_ex_vat"].map(k=>[k,v[k]]));r.fields_verified=true;
+      }
+      prepareSave({version:1,record:r},outcomeNames[r.status]);
+    } catch(e){$("#feedback-error").textContent=e.message;}
+  };
+  let historicalIndex=null;
+  const stopWords=new Set(["구매","물품","입찰","공고","납품","제조","설치","공급","계약","긴급","재공고","구입","purchase","supply"]);
+  const words=(s)=>new Set(String(s||"").replace(/^\[[^\]]+\]/,"").normalize("NFKC").toLowerCase().replace(/[^a-z0-9가-힣]+/g," ").trim().split(/\s+/).filter(w=>w&&!stopWords.has(w)));
+  const tri=(s)=>{const t=[...words(s)].sort().join("");return new Set(Array.from({length:Math.max(0,t.length-2)},(_,i)=>t.slice(i,i+3)));};
+  const overlap=(a,b)=>{let same=0;for(const v of a)if(b.has(v))same++;return same/Math.max(1,a.size+b.size-same);};
+  function pastPrices(d) {
+    if(!historicalIndex)historicalIndex=(snapshot.history_index||[]).map(r=>({r,w:words(r.title),g:tri(r.title)}));
+    const w=words(d.title),g=tri(d.title),seen=new Set(),matches=[];
+    for(const item of historicalIndex) {
+      const r=item.r,key=r.tender_id||r.id;if(!key||key===d.id||seen.has(key))continue;
+      let score=Math.max(overlap(w,item.w),overlap(g,item.g));
+      const exact=d.product_key&&d.product_key===r.product_key;
+      if(exact)score=1;
+      else if(d.manufacturer_model&&String(d.manufacturer_model).toLowerCase()===String(r.manufacturer_model).toLowerCase())score=.98;
+      if(score<.18||r.awarded_at&&Date.parse(r.awarded_at)>Date.now())continue;
+      seen.add(key);
+      const qualified=!!(exact&&r.reviewed&&r.price_basis_verified&&r.source&&d.unit&&d.unit===r.unit&&Number(d.quantity)>0&&Number(d.quantity)===Number(r.quantity)&&d.contract_scope===r.contract_scope&&d.contract_scope==="fixed_total"&&d.money_basis===r.money_basis&&d.money_basis==="KRW_EX_VAT_CONTRACT_TOTAL"&&Date.now()-Date.parse(r.awarded_at)<=730*86400000&&Date.parse(r.label_available_at)<=Date.now()&&Number.isSafeInteger(Number(r.award_amount_ex_vat))&&Number(r.award_amount_ex_vat)>0);
+      matches.push({...r,score,qualified});
+    }
+    matches.sort((a,b)=>Number(b.qualified)-Number(a.qualified)||b.score-a.score);
+    return matches;
+  }
+  function renderHistory(root,d) {
+    root.append(el("h3","비슷한 품목의 과거 낙찰가격"));
+    const rows=pastPrices(d),values=rows.filter(r=>r.qualified).map(r=>Number(r.award_amount_ex_vat)).sort((a,b)=>a-b);
+    if(values.length>=3){const mid=Math.floor(values.length/2),median=values.length%2?values[mid]:values[mid-1]/2+values[mid]/2;root.append(el("p",`동일 규격·수량 ${values.length}건의 과거 중앙값 ${money(median)} (부가세 별도). ML 예측·최종 투찰가는 별도입니다.`,"notice"));}
+    if(!rows.length)root.append(el("p","연결할 만한 과거 품목을 찾지 못했습니다.","muted"));
+    for(const r of rows.slice(0,5)) {
+      const box=el("details");box.append(el("summary",`${r.title||"공고명 미확인"} · ${Number(r.award_amount_ex_vat||r.award_amount_raw)>0?money(r.award_amount_ex_vat||r.award_amount_raw):"금액 미확인"}`));
+      box.append(el("p",r.qualified?"동일 규격·동일 수량·세금 기준 확인된 과거 사례":"제목·모델이 비슷한 참고 사례. 규격·수량·단가/총액·세금 대조 필요"),el("p",`기관 ${r.institution||"미확인"} · 낙찰 ${date(r.awarded_at)} · 수량 ${r.quantity||"미확인"} ${r.unit||""}`));
+      if(r.source)box.append(link(r.source,"가격 출처 확인"));root.append(box);
+    }
+  }
+  function renderMarketDiscovery(root,d) {
+    root.append(el("h3","국내·해외 시장가격"));
+    for(const p of d.market?.observations||[]) {
+      const box=el("p");box.append(el("strong",`${p.unit_price} ${p.currency} · ${p.model||p.title||"모델 미확인"}`),el("small",`관찰 판매가 · 세금·단위·공급 가능 여부 미검토 · ${date(p.checked_at)}`),link(p.source,"판매 페이지"));root.append(box);
+    }
+    for(const run of d.market_search||[])for(const region of run.results||[])for(const source of region.sources||[]){const p=el("p");p.append(el("small",region.region+" 검색 후보 · 가격·규격 확인 필요"),link(source.url,source.title||"검색 출처"));root.append(p);}
+    const details=el("details");details.append(el("summary","국내·해외 가격 찾기와 상품 주소 등록"),el("p","검색 바로가기는 검색 결과 자동수집이 아닙니다. 찾은 공개 상품 주소는 등록 후 갱신하며, 수집 제한·가격 미표시는 미확인으로 표시합니다.","muted"));
+    const term=d.manufacturer_model||String(d.title||"").replace(/^\[[^\]]+\]/,"");
+    for(const [name,base,key,q] of [["네이버 국내","https://search.naver.com/search.naver","query",term+" 가격"],["Google 국내·해외","https://www.google.com/search","q",term+" price"],["중국 공급처","https://www.google.com/search","q",term+" China manufacturer wholesale price"],["대만 공급처","https://www.google.com/search","q",term+" Taiwan manufacturer price"],["미국 공급처","https://www.google.com/search","q",term+" USA distributor price"]]){const p=el("p"),u=new URL(base);u.searchParams.set(key,q);p.append(link(u.href,name));details.append(p);}
+    const input=el("input");input.type="url";input.placeholder="확인한 공개 상품 페이지 https://…";input.setAttribute("aria-label","시장가격 상품 주소");
+    const b=el("button","이 상품 주소를 비교자료로 등록");b.onclick=()=>{try{const u=new URL(input.value);if(u.protocol!=="https:"||u.username||u.password||u.hash)throw new Error("공개 HTTPS 상품 주소를 입력하세요.");prepareSave({version:1,market:{opportunity_id:d.id,source_url:u.href}},"시장가격 자료");}catch(e){alert(e.message);}};
+    details.append(input,b);root.append(details);
+  }
+
   // Download only public ciphertext while the user enters their password.
   encryptedSnapshot().catch(() => {});
 })();
