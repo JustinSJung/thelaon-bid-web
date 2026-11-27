@@ -132,10 +132,12 @@
       const expired = ["application_deadline", "bid_deadline"].filter(
         (k) => row[k] && Date.parse(row[k]) <= now,
       );
-      if (expired.length) {
+      const kstDay = new Date(now + 9 * 3600000).toISOString().slice(0, 10);
+      const dateClosed = !row.bid_deadline && row.bid_end_date && row.bid_end_date < kstDay;
+      if (expired.length || dateClosed) {
         row.stage = "excluded";
         row.stage_title = "마감·제외";
-        row.reason = expired
+        row.reason = dateClosed ? "공시 종료일 경과·정확한 시각은 미확인" : expired
           .map((k) => (k === "bid_deadline" ? "투찰 마감" : "참가신청 마감"))
           .join(" / ");
         row.economics = null;
@@ -218,6 +220,7 @@
       stage = $("#stage").value;
     const rows = currentRows().filter(
       (r) =>
+        ($("#source-filter").value === "all" || ($("#source-filter").value === "power" ? r.power_sector : r.source_system === "ALIO API")) &&
         (stage === "all" ||
           (stage === "active" ? r.stage !== "excluded" : r.stage === stage)) &&
         [r.title, r.institution, r.notice_no]
@@ -264,7 +267,7 @@
           "참가신청 " +
             date(row.application_deadline) +
             " / 투찰 " +
-            date(row.bid_deadline),
+            (row.bid_deadline ? date(row.bid_deadline) : row.bid_end_date ? row.bid_end_date + " (시각 미확인)" : "미확인"),
         ),
       );
       if (row.manual_source) b.append(el("small", "수동 반입 · 원문 미검토"));
@@ -313,7 +316,9 @@
           : "규격서 확인 필요",
       ],
       ["참가신청 마감", date(row.application_deadline)],
-      ["투찰 마감", date(row.bid_deadline)],
+      ["수집 경로", row.source_system || "미확인"],
+      ["공개 원문 확인", date(d.public_print_checked_at)],
+      ["투찰 마감", row.bid_deadline ? date(row.bid_deadline) : row.bid_end_date ? row.bid_end_date + " (시각 미확인)" : "미확인"],
     ]) {
       const n = el("div");
       n.append(el("small", label), el("strong", value));
@@ -671,6 +676,7 @@
     offset = 0;
     renderRows();
   };
+  $("#source-filter").onchange = () => { offset = 0; renderRows(); };
   $("#stage").onchange = () => {
     offset = 0;
     renderRows();
